@@ -1,0 +1,3 @@
+rootProject.name = 'WikiMedia'
+include 'producer-wikimedia'
+
