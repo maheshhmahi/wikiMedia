@@ -1,5 +1,6 @@
 package org.example;
 
+import com.google.gson.JsonParser;
 import org.apache.http.HttpHost;
 import org.apache.http.auth.AuthScope;
 import org.apache.http.auth.UsernamePasswordCredentials;
@@ -30,7 +31,7 @@ import java.util.Properties;
 
 public class OpenSearchConsumer {
 
-    public static RestHighLevelClient createOpenSearchClient() {
+    private static RestHighLevelClient createOpenSearchClient() {
         String connString = "http://localhost:9200";
 //        String connString = "https://a6f335pl4h:93g3jy676g@washington-state-uni-4097529693.us-east-1.bonsaisearch.net:443";
 
@@ -116,8 +117,16 @@ public class OpenSearchConsumer {
                     // send the record into OpenSearch
 
                     try {
+                        // making consumer idempotent
+                        // Strategy 1 : using the kafka things
+//                        String id = record.topic() + "_" + record.partition() + "_" + record.offset();
+
+                        // Strategy 2 : if the record itself has unique id, then use it
+                        String id = extractId(record.value());
+
                         IndexRequest indexRequest = new IndexRequest("wikimedia")
-                                .source(record.value(), XContentType.JSON);
+                                .source(record.value(), XContentType.JSON)
+                                .id(id);
 
                         IndexResponse indexResponse = openSearchClient.index(indexRequest, RequestOptions.DEFAULT);
 
@@ -134,6 +143,15 @@ public class OpenSearchConsumer {
 
         //close things
 
+    }
+
+    private static String extractId(String json) {
+        return JsonParser.parseString(json)
+                .getAsJsonObject()
+                .get("meta")
+                .getAsJsonObject()
+                .get("id")
+                .getAsString();
     }
 
 }
