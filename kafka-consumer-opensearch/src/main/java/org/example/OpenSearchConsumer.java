@@ -11,7 +11,10 @@ import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.common.errors.WakeupException;
 import org.apache.kafka.common.serialization.StringDeserializer;
+import org.opensearch.action.bulk.BulkRequest;
+import org.opensearch.action.bulk.BulkResponse;
 import org.opensearch.action.index.IndexRequest;
 import org.opensearch.action.index.IndexResponse;
 import org.opensearch.client.RequestOptions;
@@ -91,6 +94,23 @@ public class OpenSearchConsumer {
         //create out kafka client
         KafkaConsumer<String, String> consumer = getLocalKafkaConsumer();
 
+        final Thread mainThread = Thread.currentThread();
+
+        Runtime.getRuntime().addShutdownHook(new Thread() {
+            public void run() {
+                log.info("Detected a shutdown, Let's exit by calling consumer.wakeup()....");
+                consumer.wakeup();
+
+                // join the main thread to allow the execution of the code in the main thread
+
+                try {
+                    mainThread.join();
+                } catch (InterruptedException e) {
+                    throw new RuntimeException(e);
+                }
+            }
+        });
+
         // we need to create the index on OpenSearch if it doesn't exist already
         // if we use try method and pass the openSearchClient or any other thing, if we get any exception, it will close automatically
         try(openSearchClient; consumer) {
@@ -104,15 +124,17 @@ public class OpenSearchConsumer {
                 log.info("Index already exists");
             }
 
-            //subscribe the consumer
-            consumer.subscribe(Collections.singleton("wikimedia.recentchange"));
-
             while (true) {
+
+                //subscribe the consumer
+                consumer.subscribe(Collections.singleton("wikimedia.recentchange"));
 
                 ConsumerRecords<String, String> records = consumer.poll(Duration.ofMillis(3000));
 
                 int recordCount = records.count();
                 log.info("Received " + recordCount + " record(s)");
+
+                BulkRequest bulkRequest = new BulkRequest();
 
                 for(ConsumerRecord<String, String> record : records) {
                     // send the record into OpenSearch
@@ -129,25 +151,39 @@ public class OpenSearchConsumer {
                                 .source(record.value(), XContentType.JSON)
                                 .id(id);
 
-                        IndexResponse indexResponse = openSearchClient.index(indexRequest, RequestOptions.DEFAULT);
+//                        IndexResponse indexResponse = openSearchClient.index(indexRequest, RequestOptions.DEFAULT);
 
-                        log.info(indexResponse.getId());
+                        bulkRequest.add(indexRequest);
+
+//                        log.info(indexResponse.getId());
                     } catch (Exception e) {
 
                     }
                 }
 
-                // commit offsets after the batch is consumed
-                consumer.commitAsync();
-                log.info("Offsets have been committed");
+                if(bulkRequest.numberOfActions() > 0) {
+                    BulkResponse bulkResponse = openSearchClient.bulk(bulkRequest, RequestOptions.DEFAULT);
 
+                    log.info("Inserted : " + bulkResponse.getItems().length + "record(s)");
+
+                    try {
+                        Thread.sleep(1000);
+                    } catch (InterruptedException e) {
+                        log.error("Exception : " + e.getMessage());
+                    }
+
+                    // commit offsets after the batch is consumed
+                    consumer.commitAsync();
+                    log.info("Offsets have been committed");
+                }
             }
+        } catch (Exception e) {
+            log.error("Unexpected exception", e);
+        } finally {
+            consumer.close();
+            openSearchClient.close();
+            log.info("The consumer is now gracefully closed");
         }
-
-        //main code login
-
-        //close things
-
     }
 
     private static String extractId(String json) {
