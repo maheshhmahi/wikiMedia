@@ -31,10 +31,10 @@ Configure Kafka producer properties including the broker address, key, and value
 1. Handling Large Volumes of Data: Ensured the Kafka broker and Elasticsearch cluster are appropriately scaled.
 2. Data Consistency: Implemented proper error handling and retries in the Kafka consumer to ensure data consistency during indexing.
 
-##Conclusion
+## Conclusion
 This project successfully demonstrates the integration of Kafka with Wikimedia and Elasticsearch, forming a robust real-time data pipeline. The system can handle high-velocity data streams and provides a scalable solution for real-time data ingestion and analysis.
 
-##Future Work
+## Future Work
 1. Implement advanced data processing and transformation before indexing.
 2. Add monitoring and alerting for the pipeline to ensure high availability and reliability.
 3. Explore other sources of data to integrate into the pipeline.
